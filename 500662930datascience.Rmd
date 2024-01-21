@@ -1,0 +1,548 @@
+---
+title: "PROJECT ON DATA ANALYSIS"
+author: "Amodemaja Olalekan Quzim 500662930"
+date: "2023-12-03"
+output:
+  pdf_document: default
+  word_document: default
+---
+
+### Introduction
+Leading mobile phone service provider BangorTelco is addressing the issue of retention of clients. The data science team wants to create a prediction model that will help them determine which clients are most likely to leave when their contracts expire. This focused strategy will cut expenses while optimising incentive offers.
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Data Retrieval
+The BangorTelco IT department has provided access to the corporate database, which is an extensive collection of data that includes 20,000 previous clients. The dataset, kept in a database called 'BangorTelco_Customers,' contains vital information about customers, such as usage trends, demographics, and the variable 'LEAVE,' which indicates whether a client left or stayed at the end of their contract.
+
+We will retrieve all the necessary information to start our research using SQL. To build a decision tree model that can forecast the probability if a customer will leave or stay, it is important that this data retrieval stage be completed to obtain insights into consumer behavior.
+
+
+```{r}
+#install my sql and load library
+options(repos = c(CRAN = "https://cran.r-project.org"))
+
+install.packages("RMySQL")
+library(RMySQL)
+library(ggplot2)
+USER<- "root"
+PASSWORD<- "Baba4every"  
+HOST<- "localhost"
+DBNAME<- "world"            #the database we want to connect, that is the one we  created during the installation
+
+SQLdatabase<- dbConnect(MySQL(), user= USER, password<-PASSWORD, host = HOST, dbname = DBNAME, port=3306) #Connect to the SQL database
+bangortelcodata<- dbGetQuery(SQLdatabase, statement = "SELECT * from world.bangorcustomerchurn")
+dbDisconnect(SQLdatabase)
+#understand the data
+head (bangortelcodata)
+tail(bangortelcodata)
+dim(bangortelcodata )
+class(bangortelcodata$LEAVE)
+
+```
+###  Data Exploaration
+In this stage, we will be performing some basic explorations such as understanding the data,viewing the nature of our data,converting attributes to the necessary data type. Key insights into customer behaviour and attributes can be obtained by examining the BangorTelco customer dataset. COLLEGE, INCOME, OVERAGE, REPORTED_SATISFACTION, and other factors are among the ones we examine. Finding trends and possible indicators of client attrition, this investigation offers a sophisticated comprehension of the data.
+# Findings:
+Demographics;
+College Distribution- Level of Education
+Income level
+Overcharge per month
+
+Usage Pattern;
+Consideration of plans 
+Usage level
+Satisfaction Level
+
+
+
+```{r}
+library(dplyr)
+View(bangortelcodata)
+
+head(select(.data=bangortelcodata, REPORTED_SATISFACTION:LEAVE,1:10))
+summarise(.data=bangortelcodata,                     
+          AverageIncome=mean(INCOME,na.rm=TRUE))
+sample_n(tbl=bangortelcodata,10)
+head(sample_frac(tbl=bangortelcodata,0.01))
+```
+
+
+```{r}
+#rename columns
+colnames(bangortelcodata)
+bangortelcodata<- bangortelcodata %>% rename(RETENTION = LEAVE)
+bangortelcodata<- bangortelcodata %>% rename(USAGE_LEVEL=REPORTED_USAGE_LEVEL)
+bangortelcodata<- bangortelcodata %>% rename(PLUS_15MINS = OVER_15MINS_CALLS_PER_MONTH)
+bangortelcodata<- bangortelcodata %>% rename(PLAN_CHANGE=CONSIDERING_CHANGE_OF_PLAN)
+
+bycustomer_retention<-group_by(.data=bangortelcodata,RETENTION)
+customer_retention_summary<- summarize(.data= bycustomer_retention,
+
+                       #Summarise the table grouped by LEAVE COLUMN
+                        count=n(),                         #Count rows in each  group
+                        AverageIncome=mean(INCOME,na.rm=TRUE),
+                        .groups="drop")  
+customer_retention_summary
+
+bycustomer_retention<-group_by(.data=bangortelcodata,RETENTION,PLAN_CHANGE)
+customer_retention_summary<- summarize(.data= bycustomer_retention,
+
+                       #Summarise the table grouped by LEAVE COLUMN
+                        count=n(),                         #Count rows in each  group
+                        AverageIncome=mean(INCOME,na.rm=TRUE),
+                        .groups="drop")  
+customer_retention_summary
+
+bycustomer_retention<-group_by(.data=bangortelcodata,RETENTION,PLAN_CHANGE,USAGE_LEVEL)
+customer_retention_summary<- summarize(.data= bycustomer_retention,
+
+                       #Summarise the table grouped by LEAVE COLUMN
+                        count=n(),                         #Count rows in each  group
+                        AverageIncome=mean(INCOME,na.rm=TRUE),
+                        .groups="drop")  
+customer_retention_summary
+select(bycustomer_retention, RETENTION,USAGE_LEVEL,PLAN_CHANGE)
+
+```
+
+```{r}
+# as 'COLLEGE' is the variable with values 'zero' and 'one'
+# Converting 'zero' to 0 and 'one' to 1
+bangortelcodata <- bangortelcodata%>%
+  mutate(COLLEGE=ifelse(COLLEGE == 'one', 1, 0),
+         RETENTION=ifelse(RETENTION=="STAY",0,1))
+head(bangortelcodata)
+
+```
+
+
+```{r}
+# Assuming 'bangortelcodata' is your dataframe and 'REPORTED_SATISFACTION' is the column
+bangortelcodata$REPORTED_SATISFACTION <- factor(bangortelcodata$REPORTED_SATISFACTION)
+                                               
+
+head(bangortelcodata)
+```
+```{r}
+# Assuming 'bangortelcodata' is your dataframe and 'USAGE_LEVEL' is the column
+bangortelcodata$USAGE_LEVEL <- factor(bangortelcodata$USAGE_LEVEL)
+                                               
+
+head(bangortelcodata)
+```
+```{r}
+# Assuming 'bangortelcodata' is your dataframe and 'CHANGE OF PLANS' is the column
+bangortelcodata$PLAN_CHANGE <- factor(bangortelcodata$PLAN_CHANGE)
+                                               
+head(bangortelcodata)
+```
+### Task 1: Decision Tree
+Methodology:
+Based on the 'LEAVE' variable, we build a predictive model for customer churn using the decision tree algorithm. The decision tree categorises consumers into those who are likely to stay or leave based on a set of rules deduced from the dataset.
+### Model Performance: 
+The accuracy, precision, and recall of the decision tree model are measured through training and evaluation. The ability of the model to forecast loss of customers is essential for optimizing retention tactics.
+
+
+
+
+```{r}
+#install packages and load library
+install.packages("rpart")
+install.packages("rpart.plot")
+install.packages("caret")
+install.packages("glmnet")
+install.packages("caTools")
+
+#library 
+library(dplyr) 
+library(forcats)
+library(caret)
+library(glmnet)
+library(caTools)
+library(rpart)
+library(rpart.plot)
+data_tree<- bangortelcodata %>% select (-CUSTOMERID)
+set.seed(123)
+sample_split<- sample.split(data_tree$RETENTION,SplitRatio =0.7)
+#train and test the set for the decision tree
+traindata <- subset(data_tree,sample_split == TRUE)
+testdata <- subset(data_tree,sample_split == FALSE)
+```
+
+```{r}
+#Model for the decision tree
+decisiontree_model <- rpart(RETENTION ~ ., data = traindata, method = "class", minbucket = 5, maxdepth= 6, cp=0.001) 
+prediction<-predict(decisiontree_model, traindata, type="class")
+confusion_matrix<- table(prediction, traindata$RETENTION)
+
+print(confusion_matrix)
+TP<-confusion_matrix[2,2]
+FP<-confusion_matrix[2,1]
+TN<-confusion_matrix[1,1]
+FN<-confusion_matrix[1,2]
+accuracy<- (TP+TN)/sum(confusion_matrix)
+precision<- TP/(TP+FP)
+recall<- TP/ (TP+FN)
+f1_score<- 2 * (precision = recall)/ (precision + recall)
+print(paste('Accuracy:', accuracy))
+print(paste('Precision:', precision))
+print(paste('Recall:', recall))
+print(paste('f1_score:', f1_score))
+
+rpart.plot(decisiontree_model, box.palette = c("lightgreen", "lightblue"),
+            nn.cex = 0.8, # Adjust the node label size if needed
+            fallen.leaves = TRUE, main ="BANGOR TELCO DECISION TREE", extra=104,type=4)
+head(data_tree)
+
+```
+## Interpretation:
+accuracy: The percentage of accurate predictions made by the model is 70.54%, which is its overall accuracy.
+Precision: With a precision of 77.61%, the model is accurate 77.61% of the time when it predicts a consumer would depart (class 1).
+Recall:A recall percentage of 77.61% means that 77.61% of the consumers who genuinely left are being captured by the model.
+F1_Score: A very high F1 score of 1 could indicate overfitting or a problem with the data. To guarantee model robustness, more research is advised.
+The costs associated with false positives and false negatives may dictate that we prioritise recall or precision, depending on the particular business situation.
+```{r}
+# save the model
+saveRDS(data_tree, "C:/Users/Windows/Desktop/New folder/MyTreeModel.RDS") # change this to the location in absolution path where you want to save your RDS model
+```
+
+In the next step, we will run a summary statistics and check the structure of our data to verify it's fitness to run a logistics regression.
+```{r}
+#check summary and structure of data_tree
+summary(decisiontree_model)
+str(data_tree)
+```
+## TASK 2: LOGISTIC REGRESSION
+## Introduction: 
+The goal of Task 2 is to estimate the probability that a customer will leave BangorTelco by using logistic regression as a predictive modelling method. Using different input features to forecast the likelihood of customer churn, logistic regression provides a more straightforward method, building on the understanding obtained from the decision tree analysis in Task 1.
+
+## Logistic regression models
+Model development:
+Using the supplied dataset, which includes details on 20,000 BangorTelco customers, we will build a logistic regression model. The goal of the model is to identify trends in the characteristics of customers that influence their propensity to leave the business. In contrast to decision trees, logistic regression computes the likelihood of an occurrence directly, which makes it an effective tool for binary classification issues like churn prediction.
+```{r}
+#Run a logistic regression using the retention column as the dependent variable and others as the independent variable
+bangortelcoLog <- glm(formula = RETENTION ~  INCOME + OVERAGE + LEFTOVER + HOUSE + HANDSET_PRICE + PLUS_15MINS + AVERAGE_CALL_DURATION + REPORTED_SATISFACTION + USAGE_LEVEL + PLAN_CHANGE, # Explain RETENTION using INCOME,OVERAGE,LEFTOVER,HOUSE,HANDSET PRICE, PLUS 15MINS CALLS, AVG CALL DUR, REP, SAT, USAGE LEVEL and CHANGE OF PLAN
+               data = data_tree,                                    #  the model on the iris data
+               family = binomial)                              # binomial means we will be using logistic regression
+
+
+#Inspect the model:
+bangortelcoLog
+summary(bangortelcoLog)
+
+```
+## Logistic regression Interpretations:
+Intercept: -0.5306
+
+when all prediction variable is zero, the log odd of the response variable is the intercept.
+INCOME: 3.43e-06
+
+A 3.43e-06 increase in the coefficient of the dependent variable 'RETENTION',is associated with a one-unit increase of the independent variable INCOME.
+OVERAGE: 0.00497
+
+A 0.00497 increase in the coefficient of the dependent variable 'RETENTION',is associated with a one-unit increase of the independent variable.
+LEFTOVER: 0.00833
+
+A 0.00833 increase in the coefficient of the dependent variable 'RETENTION',is associated with a one-unit increase of the independent variable LEFTOVER.
+HOUSE: -1.87e-06
+
+A -1.87e-06 decrease in the coefficient of the dependent variable 'RETENTION',is associated with a one-unit increase of the independent variable HOUSE.
+HANDSET_PRICE: 0.000438
+
+A 0.000438 increase in the coefficient of the dependent variable 'RETENTION',is associated with a one-unit increase of the independent variable HANDSET_PRICE.
+PLUS_15MINS: 0.01381
+
+A 0.01381 increase in the coefficient of the dependent variable 'RETENTION',is associated with a one-unit increase of the independent variable PLUS_15MINS.
+AVERAGE_CALL_DURATION: 0.02801
+
+A 0.02801 increase in the coefficient of the dependent variable 'RETENTION',is associated with a one-unit increase of the independent variable AVERAGE_CALL_DURATION.
+REPORTED_SATISFACTION (sat): -0.105
+
+A -0.105 decrease in the coefficient of the dependent variable 'RETENTION',is associated with a one-unit increase of the independent variable REPORTED_SATISFACTACTION associated to satisfaction.
+REPORTED_SATISFACTION (unsat): 0.07997
+
+A 0.07997 increase in the coefficient of the dependent variable 'RETENTION',is associated with a one-unit increase of the independent variable REPORTED_SATISFACTACTION associated to unsatisfaction.
+REPORTED_SATISFACTION (very_sat): 0.04743
+
+A 0.04743 increase in the coefficient of the dependent variable 'RETENTION',is associated with a one-unit increase of the independent variable REPORTED_SATISFACTACTION associated to very-satisfied.
+REPORTED_SATISFACTION (very_unsat): 0.07142
+
+A 0.07142 increase in the coefficient of the dependent variable 'RETENTION',is associated with a one-unit increase of the independent variable REPORTED_SATISFACTACTION associated to very-unsatisfied.
+USAGE_LEVEL (high): -0.02682
+
+A -0.02682 decrease in the coefficient of the dependent variable 'RETENTION',is associated with a one-unit increase of the independent variable USAGE_LEVEL associated to high.
+USAGE_LEVEL (little): -0.01923
+
+A -0.01923 decrease in the coefficient of the dependent variable 'RETENTION',is associated with a one-unit increase of the independent variable USAGE_LEVEL associated to little.
+USAGE_LEVEL (very_high): 0.02683
+
+A 0.02683 increase in the coefficient of the dependent variable 'RETENTION',is associated with a one-unit increase of the independent variable USAGE_LEVEL associated to very_high.
+USAGE_LEVEL (very_little): 0.02086
+
+A 0.02086 increase in the coefficient of the dependent variable 'RETENTION',is associated with a one-unit increase of the independent variable USAGE_LEVEL associated to very_little.
+PLAN_CHANGE (considering): 0.008005
+
+A 0.008005 increase in the coefficient of the dependent variable 'RETENTION',is associated with a one-unit increase of the independent variable PLAN_CHANGE associated to considering.
+PLAN_CHANGE (never_thought): 0.01625
+
+A 0.01625 increase in the coefficient of the dependent variable 'RETENTION',is associated with a one-unit increase of the independent variable PLAN_CHANGE associated to never_thought.
+PLAN_CHANGE (no): 0.06135
+
+A 0.01635 increase in the coefficient of the dependent variable 'RETENTION',is associated with a one-unit increase of the independent variable PLAN_CHANGE associated to no.
+PLAN_CHANGE (perhaps): 0.08959
+
+A 0.08959 increase in the coefficient of the dependent variable 'RETENTION',is associated with a one-unit increase of the independent variable PLAN_CHANGE associated to perhaps.
+```{r}
+head(data_tree)
+```
+
+```{r}
+library(ggplot2)
+
+
+# Calculate the Slope and Intercept
+Slope <- -coef(bangortelcoLog)[2] / coef(bangortelcoLog)[3]
+Intercept <- -coef(bangortelcoLog)[1] / coef(bangortelcoLog)[3]
+
+# Plotting using ggplot
+ggplot(data =data_tree, aes(x = INCOME, y = LEFTOVER, color = factor(RETENTION))) +
+  geom_point() +
+  geom_abline(slope = Slope, intercept = Intercept) +
+  labs(x = "INCOME", y = "LEFTOVER", color = "RETENTION") +  # Label axes and legend
+  scale_color_manual(values = c("blue", "green")) +  # Adjust colors for RETENTION
+  theme_minimal()
+
+
+
+```
+
+```{r}
+install.packages("corrplot")
+library(corrplot)
+
+# Select only numeric columns from traindata
+numeric_data <- traindata[sapply(traindata, is.numeric)]
+
+# Compute correlation matrix
+Correlations <- cor(numeric_data)
+Correlations
+
+# Visual representation of correlation matrix
+corrplot(Correlations)
+
+```
+### TASK 3: K - NEAREST NEIGHBOUR
+```{r}
+#load library
+library(caret)
+knn_data<-data_tree
+knn_data<- knn_data %>% mutate( RETENTION = factor(RETENTION))
+#scale data
+knn_data[,2:8]<-scale(knn_data[,2:8])
+
+#we would split the data into train and test split
+set.seed(123)
+intrain<-createDataPartition(knn_data$RETENTION, p = 0.70, list = FALSE)
+train_data<-knn_data[intrain,]
+test_data<-knn_data[-intrain,]
+
+?knn
+
+Grid_values<- expand.grid(k=seq(1 , 25, by =2))
+
+knn_reg_fit<- train(RETENTION~.,data = train_data, method = 'knn', 
+      preProcess= c('center', 'scale'),
+      trControl= trainControl(method = 'repeatedcv',number =10, repeats = 5), tuneGrid = Grid_values)
+knn_reg_fit
+#plot model
+results <- knn_reg_fit$results
+results |> ggplot(aes(x = k, y = Accuracy)) + geom_point() + geom_line()  
+plot(knn_reg_fit)
+
+confusionMatrix(knn_reg_fit)
+
+```
+### INTERPRETATION ON KNN MODEL
+Accuracy: 0.6317 is the stated overall accuracy (average across resamples).
+Interpreting the Accuracy
+With an accuracy of 0.6317, the model correctly classified 63.17% of cases on average.
+But accuracy by itself could not give the whole narrative.Taking into account precision, recall, and F1-score might help you gain a better understanding of the model's performance.
+
+
+```{r}
+# Make predictions on test data
+TestPred <- predict(knn_reg_fit, newdata = test_data)
+
+# Generate confusion matrix
+conf_mat_knn <- confusionMatrix(data = TestPred, reference = test_data$RETENTION)
+
+# Extract the metrics
+knn_accuracy <- conf_mat_knn$overall['Accuracy']
+knn_precision <- conf_mat_knn$byClass['Precision']
+knn_recall <- conf_mat_knn$byClass['Recall']
+knn_F1_score <- conf_mat_knn$byClass['F1']
+
+# lets display metrics
+knn_accuracy
+knn_precision
+knn_recall
+knn_F1_score
+conf_mat_knn # Confusion Matrix details in full
+
+```
+#INTERPRETATION FOR ACCURACY, PRECISION, RECALL, AND F1-SCORE in KNN MODEL
+Accuracy:
+
+The model's overall accuracy is 0.6254, which indicates that roughly 62.54% of cases were correctly classified.
+
+Precision:
+The computed precision is 0.6174. The ratio of accurately predicted positive observations to the total number of predicted positives is known as precision. In this instance, it indicates that approximately 61.74% of the occurrences that the model projected to be positive (1) were in fact positive.
+
+Recall:
+The calculation for recall, sometimes referred to as sensitivity or true positive rate, is 0.6886. The ratio of accurately predicted positive observations to all observations made during the actual class is known as recall. In this instance, it indicates that the model accurately predicted approximately 68.86% of the actual positive events.
+
+F1 Score: The harmonic mean of recall and precision is the F1 score. Recall and precision must be balanced. 0.6510 is the reported F1 score.
+```{r}
+library(pROC)                #Package for ROC calculation
+library(dplyr)               #For data manipulation
+
+
+#split train and test equally.
+set.seed(10)
+SplitIndex <- sample(x = c("Train", "Test"), size = nrow(knn_data), replace = T, prob = c(0.5,0.5))
+TrainData <- filter(knn_data, SplitIndex == "Train")
+TestData <- filter(knn_data, SplitIndex == "Test")
+
+#Build the model on training data
+set.seed(5)
+KnnModel <- train(form = RETENTION ~ .,
+                  data = TrainData,
+                  method = 'knn')
+
+#Predicted probabilities
+KnnProbs <- predict(object = KnnModel, newdata = TestData, type = "prob")
+# head(KnnProbs)
+KnnProbs <- KnnProbs[,2]      #Only want one probability for each row
+
+#Generate the ROC
+KnnROC <- roc(response = TestData$RETENTION, predictor = KnnProbs)
+plot(KnnROC, print.auc = T)
+```
+
+
+```{r}
+library(dplyr)
+
+#for the next plot to be legible, we will change the sample size to 100
+set.seed(1)
+Sample_bangotelco <- sample_n(tbl = bangortelcodata, size = 100)
+
+#Calculate and plot Hierarchical clutering
+#dist: firstly, we will calculate the distance matrix first for the sample_bangotelco, by default Euclidean distance will be calculated
+HClust <- hclust(d = dist(x=Sample_bangotelco[,2:8]), method = "average") #Hierarchical cluster analysis based on distances in Sample_bangotelco
+
+#hang = -1: this will show the labels of retention on the plot and how they will be displayed. as hang is -1 it makes the value just to hand right below the line
+#See ?plot.hclust for more details 
+plot(x = HClust, hang = -1, labels=Sample_bangotelco$RETENTION) 
+```
+
+```{r}
+install.packages("dendextend")
+library(dendextend)
+library(colorspace)
+
+#determine the distances in the bangortelcodata (excluding retention), generate hierarchical clusters
+Dist_Bangortelco <- dist(x = bangortelcodata[,2:8], method = "euclidean")  
+Hc_Bangortelco <- hclust(d = Dist_Bangortelco, method = "complete")     # In complete linkage clustering, the distance between two clusters is defined as the maximum distance between any single member of one cluster and any single member of the other cluster.()
+Bangortelco_Dend <- as.dendrogram(Hc_Bangortelco)                       # dendrogram object
+
+
+# retention column levels saved
+RetentionLevs <- rev(levels(bangortelcodata[,13]))
+
+# Color the branches based on the clusters:
+Bangortelco_Dend <- color_branches(dend = Bangortelco_Dend, k=3) 
+
+#  we will match labels, as much as we can, to the real classification of the column:
+# assign colour  ordered by the dendrogram
+labels_colors(Bangortelco_Dend) <-
+   rainbow_hcl(3)[sort_levels_values(
+     as.numeric(bangortelcodata[,13])[order.dendrogram(Bangortelco_Dend)]
+     )]
+
+# add the column type to the labels: RETENTION  which is ordered by the dendrogram
+labels(Bangortelco_Dend) <- paste(as.character(bangortelcodata[,13])[order.dendrogram(Bangortelco_Dend)], 
+                           "(",labels(Bangortelco_Dend),")",           #include numbers observed
+                           sep = "")
+# hang bangortelco_dend:
+Bangortelco_Dend <- hang.dendrogram(Bangortelco_Dend,hang_height=0.1)
+
+# label size reduced:
+Bangortelco_Dend <- set(dend = Bangortelco_Dend, what = "labels_cex",value = 0.5)
+
+# And plot:
+par(mar = c(3,3,3,7))
+plot(Bangortelco_Dend, 
+     main = "Clustered bangortelco data set (the labels give the true flower species)",  # set the main title of the plot.
+     horiz =  TRUE,   #plots the dendrogram in most cases horizontally
+     nodePar = list(cex = .007)) # sets the nodes to have  labels at 7% of the default text size.
+
+```
+
+```{r}
+#circlize graph
+install.packages("circlize")
+library(circlize)
+par(mar = rep(1,4))
+circlize_dendrogram(Bangortelco_Dend)
+
+```
+```{r}
+#import cluster 
+install.packages("cluster")
+library(cluster)
+
+```
+
+```{r}
+Bangotelco_New <- data_tree[,c("INCOME", "HANDSET_PRICE")]
+
+#we will make use of KMeans for the algorithm, and then specify that we want k=3 clusters
+Kmean_bangortelcodata <- kmeans(x = Bangotelco_New, center = 3) # neat right!
+
+#Noting that the clusters for the data not having RETENTION , does a fair job
+table(RETENTION = bangortelcodata$RETENTION, Cluster = Kmean_bangortelcodata$cluster)
+
+# lets plot INCOME and HANDSET 
+# coloring the points according to the cluster assignments from k-means.
+plot(Bangotelco_New[,c("INCOME", "HANDSET_PRICE")], col=Kmean_bangortelcodata$cluster)
+# Adds the cluster centers to the plot as points with a different plotting character (pch=8 which is a star) and a larger size (cex=2). The centers are colored with the colors 1 to 3 to distinguish them from the data points.
+points(Kmean_bangortelcodata$centers[,c("INCOME", "HANDSET_PRICE")], col=1:3, pch=8, cex=2)
+
+#plot cluster
+clusplot(Bangotelco_New, Kmean_bangortelcodata$cluster, color = TRUE)
+clusplot(Bangotelco_New, Kmean_bangortelcodata$cluster, color=TRUE, shade=TRUE, 
+         labels=2, lines=0)
+```
+## INTERPRETATION OF CLUSTERING(COMPONENT 1)
+The two component which is INCOME AND HANDSET_PRICE  expalins 100% of the point variability
+
+```{r}
+
+# New data without retention
+bangortelco_New <- bangortelcodata[, 2:8]
+
+# Lets partition around mediods - fit 3 medoids to the Bangortelco_New data
+Bangortelco_Med <- pam(x = bangortelco_New, k = 3)$clustering
+
+# are the clusters well distinguished?
+clusplot(bangortelco_New, Bangortelco_Med, color = TRUE)
+
+```
+## INTERPRETATION OF CLUSTERING(COMPONENT 2)
+The two component which is INCOME AND HANDSET_PRICE  expalins 49.8% of the point variability
+```{r}
+tinytex::install_tinytex(force = TRUE)
+
+```
+
